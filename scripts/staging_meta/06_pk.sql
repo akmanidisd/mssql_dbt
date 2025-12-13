@@ -48,7 +48,7 @@ UPDATE MS_RAW.STG_META.SF_TABLES
     WHERE SF_COLUMN_NAME = NEW_PK_COLUMN_NAME
     ; 
 
-    -- 34 pk = <table_name>_id
+    -- 34 pk != <table_name>_id
     SELECT *
     FROM MS_RAW.STG_META.V_PRIMARY_KEYS_ONE K
     WHERE SF_COLUMN_NAME != NEW_PK_COLUMN_NAME
@@ -81,14 +81,26 @@ UPDATE MS_RAW.STG_META.SF_TABLES
       WHERE 
          i.SF_COLUMN_NAME != i.NEW_PK_COLUMN_NAME
       -- TO KEEP
-         AND    i.sf_column_name NOT IN ('API_TOKEN_ACCESS_LOG_ID','JOB_ID','OU_ID','PRODUCT_BASE_ID','CANDIDATE_ID','ECRUITER_ID','USER_ID','SALARY_TYPE_ID'
+         AND i.sf_column_name NOT IN ('API_TOKEN_ACCESS_LOG_ID','JOB_ID','OU_ID',
+                                      'PRODUCT_BASE_ID','CANDIDATE_ID','ECRUITER_ID',
+                                      'USER_ID','SALARY_TYPE_ID'
                                      )
       -- TO RENAME
-         AND i.sf_column_name NOT IN ('CC_STATUS','CLIENT_ID','DISPLAY_STYLE_ID','DRAFT_ID','DUPLICATE_JOBS_ID','ECRUITER_FEEDBACK_ID','ECRUITER_FEEDBACK_TYPE_ID',
-                                      'ENQUIRY_LOG_STATUS_ID','EMAIL_ACTION_ID','FEEDBACK_ID','GATEWAY_ID','HOLIDAY_DATE_ID','IMPORT_FEED_ECRUITER_ID','ID','IN_ARREARS_JOB_SPENDS_ID',
-                                      'LOG_ID','JOB_SEARCH_ALERT_CHANNEL_LOOKUP_ID','JOB_SECTOR_VISIBILITY_BW','JOB_SPEND_REASON_BW','LEVEL_ID','LIST_ID','LOG_TYPE','NOTICE_ID',
-                                      'ORG_ID','OU_BETA_ACCESS_BW','PROFICIENCY_ID','PROFILE_ID','PUSH_NOTIFICATION_PREFERENCE_BW','REG_TYPE_ID','SALARY_DESCRIPTION_BW',
-                                      'SEARCH_ID','SEARCH_TYPE','SPENT_ON_TYPE_ID','TEMPLATE_ID','TYPE_ID','USER_ACCOUNT_BW','USER_JOB_HISTORY_ID'
+         AND i.sf_column_name NOT IN ('CC_STATUS','CLIENT_ID','DISPLAY_STYLE_ID','DRAFT_ID',
+                                      'DUPLICATE_JOBS_ID','ECRUITER_FEEDBACK_ID',
+                                      'ECRUITER_FEEDBACK_TYPE_ID','ENQUIRY_LOG_STATUS_ID',
+                                      'EMAIL_ACTION_ID','FEEDBACK_ID','GATEWAY_ID',
+                                      'HOLIDAY_DATE_ID','IMPORT_FEED_ECRUITER_ID','ID',
+                                      'IN_ARREARS_JOB_SPENDS_ID','LOG_ID',
+                                      'JOB_SEARCH_ALERT_CHANNEL_LOOKUP_ID',
+                                      'JOB_SECTOR_VISIBILITY_BW',
+                                      'JOB_SPEND_REASON_BW','LEVEL_ID','LIST_ID','LOG_TYPE',
+                                      'NOTICE_ID','ORG_ID','OU_BETA_ACCESS_BW',
+                                      'PROFICIENCY_ID','PROFILE_ID',
+                                      'PUSH_NOTIFICATION_PREFERENCE_BW','REG_TYPE_ID',
+                                      'SALARY_DESCRIPTION_BW','SEARCH_ID','SEARCH_TYPE',
+                                      'SPENT_ON_TYPE_ID','TEMPLATE_ID','TYPE_ID',
+                                      'USER_ACCOUNT_BW','USER_JOB_HISTORY_ID'
                                      )
     ORDER BY ALL;
 
@@ -105,7 +117,10 @@ UPDATE MS_RAW.STG_META.SF_TABLES
       WHERE 
           i.SF_COLUMN_NAME != i.NEW_PK_COLUMN_NAME
       -- TO KEEP
-          AND i.sf_column_name NOT IN ('API_TOKEN_ACCESS_LOG_ID','JOB_ID','OU_ID','PRODUCT_BASE_ID')
+         AND i.sf_column_name NOT IN ('API_TOKEN_ACCESS_LOG_ID','JOB_ID','OU_ID',
+                                      'PRODUCT_BASE_ID','CANDIDATE_ID','ECRUITER_ID',
+                                      'USER_ID','SALARY_TYPE_ID'
+                                     )
     ORDER BY ALL;
 
     -- INITIAL LOAD OF ONE PK COLUMN
@@ -114,7 +129,11 @@ UPDATE MS_RAW.STG_META.SF_TABLES
       FROM MS_RAW.STG_META.V_PRIMARY_KEYS_ONE AS i
       WHERE t.sf_table_schema = i.sf_table_schema
         AND t.sf_table_name   = i.sf_table_name
-        AND i.sf_column_name NOT IN ('API_TOKEN_ACCESS_LOG_ID','JOB_ID','OU_ID','PRODUCT_BASE_ID')
+      -- TO KEEP
+         AND i.sf_column_name NOT IN ('API_TOKEN_ACCESS_LOG_ID','JOB_ID','OU_ID',
+                                      'PRODUCT_BASE_ID','CANDIDATE_ID','ECRUITER_ID',
+                                      'USER_ID','SALARY_TYPE_ID'
+                                     )
     ;
 
    

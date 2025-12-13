@@ -16,7 +16,8 @@ USE SCHEMA MS_META;
 -- Shows which child tables will need their FK columns updated to reference the new surrogate key
 -- EXCLUDES: PRICEBOOK_ENTRY table
 
-select * from MS_RAW.DBT_META.KEY_3_FK_TWO ORDER BY ALL;
+SELECT * FROM MS_RAW.DBT_META.KEY_3_FK_TWO ORDER BY ALL;
+
 CREATE OR REPLACE TABLE MS_RAW.DBT_META.KEY_3_FK_TWO AS
 WITH ingested_tables AS (
     -- Get unique list of tables that are ingested in Snowflake
