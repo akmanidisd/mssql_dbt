@@ -1,6 +1,3 @@
-UPDATE MS_RAW.STG_META.SF_TABLES
-   SET NEW_TABLE_NAME = 'LANGUAGE_PROFICIENCY' WHERE SF_TABLE_NAME = 'LOOKUP_SKILLS_LANG_PROFICIENCY';
-   
     CREATE OR REPLACE VIEW MS_RAW.STG_META.V_PRIMARY_KEYS AS
     SELECT
         sfc.SF_TABLE_SCHEMA,
@@ -12,7 +9,8 @@ UPDATE MS_RAW.STG_META.SF_TABLES
         sfc.NEW_COLUMN_NAME,
         sft.NEW_TABLE_NAME,
         kcu.CONSTRAINT_NAME,
-        COUNT(SF_COLUMN_NAME) OVER (PARTITION BY sfc.SF_TABLE_SCHEMA, sfc.SF_TABLE_NAME) AS PK_COLUMNS,
+        COUNT(*) OVER (PARTITION BY kcu.CONSTRAINT_NAME) AS PK_COLUMNS,
+        COUNT(DISTINCT kcu.CONSTRAINT_NAME) OVER (PARTITION BY sfc.SF_COLUMN_NAME) AS PK_TABLES,
         kcu.ORDINAL_POSITION
     FROM ROL_RAW.REEDONLINE_META.TABLE_CONSTRAINTS tc
     INNER JOIN ROL_RAW.REEDONLINE_META.KEY_COLUMN_USAGE kcu
@@ -27,9 +25,28 @@ UPDATE MS_RAW.STG_META.SF_TABLES
         ON sfc.SF_TABLE_SCHEMA = sft.SF_TABLE_SCHEMA
        AND sfc.SF_TABLE_NAME   = sft.SF_TABLE_NAME
     WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+      AND sft.SF_TABLE_NAME != 'PRICEBOOK_ENTRY' -- pk has 5 columns
     ORDER BY ALL;
 
-    -- 241 pk has one column
+    -- 298 PKEYS, 320 PK Columns
+    SELECT count(distinct CONSTRAINT_NAME) as TOTAL_PKEYS
+         , count(*) AS TOTAL_COLUMNS
+    FROM MS_RAW.STG_META.V_PRIMARY_KEYS;
+
+    -- 220 (PK_COLUMNS=1 & PK_TABLES=1)
+    SELECT count(distinct CONSTRAINT_NAME) as TOTAL_PKEYS
+    FROM MS_RAW.STG_META.V_PRIMARY_KEYS
+    WHERE PK_COLUMNS = 1
+      AND PK_TABLES = 1;
+    
+    -- 56 (PK_COLUMNS=1 & PK_TABLES>1)
+    SELECT count(distinct CONSTRAINT_NAME) as TOTAL_PKEYS
+    FROM MS_RAW.STG_META.V_PRIMARY_KEYS
+    WHERE PK_COLUMNS = 1
+      AND PK_TABLES > 1;
+    
+  
+    -- 220 pk has one column AND exists in one table
     CREATE OR REPLACE VIEW MS_RAW.STG_META.V_PRIMARY_KEYS_ONE AS
     SELECT SF_TABLE_SCHEMA, 
            SF_TABLE_NAME, 
@@ -40,70 +57,38 @@ UPDATE MS_RAW.STG_META.SF_TABLES
            SF_COLUMN_NAME = NEW_PK_COLUMN_NAME AS IS_TABLE_ID
     FROM MS_RAW.STG_META.V_PRIMARY_KEYS K
     WHERE PK_COLUMNS = 1
+      AND PK_TABLES = 1
     ORDER BY SF_TABLE_SCHEMA, NEW_TABLE_NAME; 
 
-    -- 207 pk = <table_name>_id
+    -- 220
+    SELECT *
+    FROM MS_RAW.STG_META.V_PRIMARY_KEYS_ONE;
+    
+    -- 191 pk = <table_name>_id
     SELECT *
     FROM MS_RAW.STG_META.V_PRIMARY_KEYS_ONE K
     WHERE SF_COLUMN_NAME = NEW_PK_COLUMN_NAME
-    ; 
+    ;
 
-    -- 34 pk != <table_name>_id
+    -- 191
+    UPDATE MS_RAW.STG_META.SF_TABLES AS t
+       SET PRIMARY_KEY_NAME = i.sf_column_name,
+           PK_COLUMNS  = 1,
+           PK_TABLES  = 1,
+           NEW_PRIMARY_KEY_NAME = i.sf_column_name
+      FROM MS_RAW.STG_META.V_PRIMARY_KEYS_ONE AS i
+      WHERE t.sf_table_schema = i.sf_table_schema
+        AND t.sf_table_name   = i.sf_table_name
+        AND i.SF_COLUMN_NAME  = i.NEW_PK_COLUMN_NAME
+    ;
+
+    -- 29 pk != <table_name>_id
     SELECT *
     FROM MS_RAW.STG_META.V_PRIMARY_KEYS_ONE K
     WHERE SF_COLUMN_NAME != NEW_PK_COLUMN_NAME
     ;
 
-    -- INITIAL LOAD OF ONE PK COLUMN
-    UPDATE MS_RAW.STG_META.SF_TABLES AS t
-       SET PRIMARY_KEY_NAME = i.sf_column_name,
-           PK_COLUMNS  = 1,
-           NEW_PRIMARY_KEY_NAME = i.sf_column_name
-      FROM MS_RAW.STG_META.V_PRIMARY_KEYS_ONE AS i
-      WHERE t.sf_table_schema = i.sf_table_schema
-        AND t.sf_table_name   = i.sf_table_name
-    ;
-
-    SELECT * FROM MS_RAW.STG_META.SF_TABLES  WHERE PK_COLUMNS  = 1 ORDER BY ALL;
-    SELECT * FROM MS_RAW.STG_META.SF_TABLES  WHERE PRIMARY_KEY_NAME = 'SECTOR_ID';
     -- INVESTIGATE WHICH PK TO BE RENAMED
-    SELECT i.sf_column_name,
-           i.sf_table_name = c.sf_table_name as IS_PK,
-           i.NEW_PK_COLUMN_NAME,
-           c.sf_table_NAME,
-           i.NEW_TABLE_NAME,
-           c.sf_table_schema
-      FROM MS_RAW.STG_META.SF_COLUMNS AS c
-      INNER JOIN MS_RAW.STG_META.V_PRIMARY_KEYS_ONE AS i
-          ON c.sf_table_schema = i.sf_table_schema
-             and c.sf_table_name = i.sf_table_name
-             and c.sf_column_name = i.sf_column_name
-      WHERE 
-         i.SF_COLUMN_NAME != i.NEW_PK_COLUMN_NAME
-      -- TO KEEP
-         AND i.sf_column_name NOT IN ('API_TOKEN_ACCESS_LOG_ID','JOB_ID','OU_ID',
-                                      'PRODUCT_BASE_ID','CANDIDATE_ID','ECRUITER_ID',
-                                      'USER_ID','SALARY_TYPE_ID'
-                                     )
-      -- TO RENAME
-         AND i.sf_column_name NOT IN ('CC_STATUS','CLIENT_ID','DISPLAY_STYLE_ID','DRAFT_ID',
-                                      'DUPLICATE_JOBS_ID','ECRUITER_FEEDBACK_ID',
-                                      'ECRUITER_FEEDBACK_TYPE_ID','ENQUIRY_LOG_STATUS_ID',
-                                      'EMAIL_ACTION_ID','FEEDBACK_ID','GATEWAY_ID',
-                                      'HOLIDAY_DATE_ID','IMPORT_FEED_ECRUITER_ID','ID',
-                                      'IN_ARREARS_JOB_SPENDS_ID','LOG_ID',
-                                      'JOB_SEARCH_ALERT_CHANNEL_LOOKUP_ID',
-                                      'JOB_SECTOR_VISIBILITY_BW',
-                                      'JOB_SPEND_REASON_BW','LEVEL_ID','LIST_ID','LOG_TYPE',
-                                      'NOTICE_ID','ORG_ID','OU_BETA_ACCESS_BW',
-                                      'PROFICIENCY_ID','PROFILE_ID',
-                                      'PUSH_NOTIFICATION_PREFERENCE_BW','REG_TYPE_ID',
-                                      'SALARY_DESCRIPTION_BW','SEARCH_ID','SEARCH_TYPE',
-                                      'SPENT_ON_TYPE_ID','TEMPLATE_ID','TYPE_ID',
-                                      'USER_ACCOUNT_BW','USER_JOB_HISTORY_ID'
-                                     )
-    ORDER BY ALL;
-
     SELECT i.sf_column_name,
            i.sf_table_name = c.sf_table_name as IS_PK,
            i.NEW_PK_COLUMN_NAME,
@@ -116,35 +101,90 @@ UPDATE MS_RAW.STG_META.SF_TABLES
              and c.sf_column_name = i.sf_column_name
       WHERE 
           i.SF_COLUMN_NAME != i.NEW_PK_COLUMN_NAME
-      -- TO KEEP
-         AND i.sf_column_name NOT IN ('API_TOKEN_ACCESS_LOG_ID','JOB_ID','OU_ID',
-                                      'PRODUCT_BASE_ID','CANDIDATE_ID','ECRUITER_ID',
-                                      'USER_ID','SALARY_TYPE_ID'
-                                     )
     ORDER BY ALL;
 
-    -- INITIAL LOAD OF ONE PK COLUMN
+    /*
+             i.sf_column_name     IN ('CC_STATUS','CLIENT_ID','DISPLAY_STYLE_ID','DRAFT_ID',
+                                      'DUPLICATE_JOBS_ID','ECRUITER_FEEDBACK_ID',
+                                      'ECRUITER_FEEDBACK_TYPE_ID','EMAIL_ACTION_ID',
+                                      'ENQUIRY_LOG_STATUS_ID','FEEDBACK_ID','GATEWAY_ID',
+                                      'IMPORT_FEED_ECRUITER_ID','IN_ARREARS_JOB_SPENDS_ID',
+                                      'JOB_SEARCH_ALERT_CHANNEL_LOOKUP_ID',
+                                      'JOB_SECTOR_VISIBILITY_BW','JOB_SPEND_REASON_BW',
+                                      'LEVEL_ID','LOG_TYPE','NOTICE_ID','ORG_ID',
+                                      'OU_BETA_ACCESS_BW','PROFICIENCY_ID','PROFILE_ID',
+                                      'PUSH_NOTIFICATION_PREFERENCE_BW','REG_TYPE_ID',
+                                      'SALARY_DESCRIPTION_BW','SEARCH_TYPE',
+                                      'SPENT_ON_TYPE_ID','TEMPLATE_ID','USER_JOB_HISTORY_ID'
+                                     )
+    */
+
+    -- 29
+    CREATE OR REPLACE VIEW MS_RAW.STG_META.V_PRIMARY_KEYS_ONE_OLD_NAME AS
+    SELECT DISTINCT i.sf_column_name,
+      FROM MS_RAW.STG_META.SF_COLUMNS AS c
+      INNER JOIN MS_RAW.STG_META.V_PRIMARY_KEYS_ONE AS i
+          ON c.sf_table_schema = i.sf_table_schema
+             and c.sf_column_name = i.sf_column_name
+      WHERE 
+          i.SF_COLUMN_NAME != i.NEW_PK_COLUMN_NAME
+    ORDER BY ALL;
+
+    -- 29
+    SELECT * FROM MS_RAW.STG_META.V_PRIMARY_KEYS_ONE_OLD_NAME;
+    -- 
+   
+    -- NEW_PRIMARY_KEY_NAME = NEW_PK_COLUMN_NAME = <TABLE>_ID
+    -- 29
     UPDATE MS_RAW.STG_META.SF_TABLES AS t
-       SET NEW_PRIMARY_KEY_NAME = i.NEW_PK_COLUMN_NAME
+       SET PRIMARY_KEY_NAME = i.sf_column_name,
+           PK_COLUMNS  = 1,
+           PK_TABLES  = 1,
+           NEW_PRIMARY_KEY_NAME = i.NEW_PK_COLUMN_NAME
       FROM MS_RAW.STG_META.V_PRIMARY_KEYS_ONE AS i
       WHERE t.sf_table_schema = i.sf_table_schema
         AND t.sf_table_name   = i.sf_table_name
+        AND i.sf_column_name IN (SELECT sf_column_name 
+                                 FROM MS_RAW.STG_META.V_PRIMARY_KEYS_ONE_OLD_NAME)
+    ;
+
+    -- LAST CHECK 191 , 29  = 220
+    SELECT COUNT(CASE WHEN PRIMARY_KEY_NAME  = NEW_TABLE_NAME || '_ID' THEN 1 END) AS ID_NAMES,
+           COUNT(CASE WHEN PRIMARY_KEY_NAME != NEW_TABLE_NAME || '_ID' THEN 1 END) AS OTHER_NAMES,
+           COUNT(*)
+    FROM MS_RAW.STG_META.SF_TABLES
+    WHERE PK_COLUMNS = 1
+      AND PK_TABLES  = 1;   
+
+      
+
+----------- END OF READY FOR  PK_COLUMNS = 1  AND PK_TABLES = 1
+
+    -- 56 (PK_COLUMNS=1 & PK_TABLES>1)
+    SELECT COALESCE(NEW_COLUMN_NAME,SF_COLUMN_NAME) AS COLUMN_NAME,
+           CASE WHEN COLUMN_NAME = NEW_TABLE_NAME || '_ID' THEN 1 ELSE 0 END AS IS_MASTER,
+           SUM(IS_MASTER) OVER (PARTITION BY SF_COLUMN_NAME) AS TOTAL_MASTERS,
+           SF_COLUMN_NAME,
+           NEW_COLUMN_NAME,
+           NEW_TABLE_NAME,
+           SF_TABLE_NAME
+    FROM MS_RAW.STG_META.V_PRIMARY_KEYS
+    WHERE PK_COLUMNS = 1
+      AND PK_TABLES  > 1
+    QUALIFY TOTAL_MASTERS = 1
+    ORDER BY SF_COLUMN_NAME, IS_MASTER DESC, SF_TABLE_NAME;
+
+
+???????????????????????????????
+
+---------- NOW 2 COLUMNS
+    /*
       -- TO KEEP
          AND i.sf_column_name NOT IN ('API_TOKEN_ACCESS_LOG_ID','JOB_ID','OU_ID',
                                       'PRODUCT_BASE_ID','CANDIDATE_ID','ECRUITER_ID',
                                       'USER_ID','SALARY_TYPE_ID'
                                      )
-    ;
-
-   
-    UPDATE MS_RAW.STG_META.SF_COLUMNS AS c
-       SET NEW_COLUMN_NAME = t.NEW_PRIMARY_KEY_NAME
-      FROM MS_RAW.STG_META.SF_TABLES AS t
-      WHERE c.sf_column_name = t.PRIMARY_KEY_NAME
-        AND t.PK_COLUMNS = 1
-    ;
-
----------- NOW 2 COLUMNS
+    */
 
 
    -- CREATE OR REPLACE VIEW MS_RAW.STG_META.V_PRIMARY_KEYS_TWO AS
