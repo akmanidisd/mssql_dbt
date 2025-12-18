@@ -4,181 +4,117 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an Analytics Engineering project migrating MSSQL data to Snowflake and building dbt models. The project creates a metadata-driven approach to generate dbt staging models from MSSQL tables ingested into Snowflake.
+This is a **Snowflake metadata transformation project** that migrates Microsoft SQL Server (MSSQL) database metadata from ReedOnline to Snowflake, preparing it for dbt staging models. The project analyzes and transforms table/column structures, primary keys, foreign keys, and data types to create normalized staging metadata.
 
-**Role Context**: You are an Analytics Engineering Consultant continuing work on creating dbt staging and intermediate models following best practices.
+## Architecture
 
-**Security Note**: Work is done against a Snowflake database `MS_RAW` containing empty table structures and MSSQL metadata. For actual data from `ROL_RAW`, provide SQL statements to receive results.
+### Directory Structure
 
-## Repository Structure
+- **`scripts/staging_meta/`** - Sequential SQL scripts that build metadata transformation pipeline in Snowflake
+- **`dbt_rol_prod/models/staging/reedonline/`** - dbt staging models (currently empty, target for generated models)
 
-### Core Databases
+### Metadata Pipeline Flow
 
-- **MS_RAW**: Snowflake database containing:
-  - Data schemas: `DBO`, `DUPLICATEJOBSERVICE`, `JOBIMPORT`, `JOBS`, `RECRUITERJOBSTEXTKERNEL`
-  - `MS_META` schema: MSSQL INFORMATION_SCHEMA copies (COLUMNS, KEY_COLUMN_USAGE, REFERENTIAL_CONSTRAINTS, TABLES, TABLE_CONSTRAINTS)
-  - `DBT_META` schema: Metadata tables for dbt model generation
+The pipeline executes in this specific order (numbered 11-18):
 
-- **ROL_RAW**: Original Snowflake raw database (access restricted - request SQL results as needed)
+1. **11_foundation.sql** - Creates `MS_RAW.STG_META` schema
+2. **12_tables.sql** - Maps MS tables to SF tables, applies table name transformations
+3. **13_columns.sql** - Maps MS columns to SF columns, applies column name transformations
+4. **14a_timestamp_column_analysis.sql** - Analyzes timestamp columns to identify date-only fields
+5. **14b_timestamps_dates.sql** - Transforms timestamp columns (TIMESTAMP_TZ → TIMESTAMP_NTZ or DATE)
+6. **15_dlt_load_id.sql** - Adds `_DLT_LOAD_ID_NUM` and `_DLT_LOAD_ID_AT` derived columns
+7. **16_row_iteration.sql** - Adds row iteration metadata columns
+8. **17_pk.sql** - Analyzes and transforms primary keys (handles 1 and 2-column PKs differently)
+9. **18_fk.sql** - Analyzes foreign key relationships and creates dbt test metadata
 
-### Directory Organization
+### Key Metadata Tables
 
-- **sql_scripts/**: Numbered SQL migration scripts organized by task
-  - `01_initial_setup/`: MS_RAW database and schema setup
-  - `02_sf_ms_metadata/`: Snowflake-MSSQL metadata joining (SF_TABLES, SF_COLUMNS)
-  - `03_normalising_timestamps/`: Date/timestamp column standardization
-  - `04_dlt_load_id/`: dlt load tracking
-  - `05_row_iteration/`: Row-level processing
-  - `06_bitwise/`: Bitwise operations
-  - `07_pk_fk_keys/`: Primary/Foreign key metadata and surrogate key logic
-  - `10_dbt_staging/`: dbt staging model generation scripts
+- **`MS_RAW.STG_META.SF_TABLES`** - Table mapping with renamed table names and PK metadata
+- **`MS_RAW.STG_META.SF_COLUMNS`** - Column mapping with renamed columns and type transformations
+- **`MS_RAW.STG_META.T_PRIMARY_KEYS`** - Primary key analysis (transient working table)
+- **`MS_RAW.STG_META.T_SECONDARY_KEYS`** - Foreign key relationships (transient working table)
+- **`MS_RAW.STG_META.T_TWO_KEYS_DBT_TEST`** - Foreign keys pointing to 2-column PKs
 
-- **dbt_rol_prod/**: dbt project directory
-  - `models/staging/reedonline/`: Staging models organized by source schema
+## Data Sources
 
-## Architecture & Data Flow
+The project reads from:
+- **`ROL_RAW.INFORMATION_SCHEMA.*`** - Snowflake information schema for current table/column metadata
+- **`ROL_RAW.REEDONLINE_META.*`** - MSSQL metadata tables (TABLES, COLUMNS, TABLE_CONSTRAINTS, KEY_COLUMN_USAGE, REFERENTIAL_CONSTRAINTS)
 
-### 1. Schema Name Mapping
+Target schemas:
+- **`REEDONLINE_DBO`**
+- **`REEDONLINE_DUPLICATEJOBSERVICE`**
+- **`REEDONLINE_JOBIMPORT`**
+- **`REEDONLINE_JOBS`**
 
-MSSQL source schemas in ROL_RAW use `REEDONLINE_` prefix, which is stripped in MS_RAW:
-- `ROL_RAW.REEDONLINE_DBO` → `MS_RAW.DBO`
-- `ROL_RAW.REEDONLINE_JOBS` → `MS_RAW.JOBS`
-- `ROL_RAW.REEDONLINE_RESTRICTED` → `MS_RAW.DBO` (renamed)
+## Naming Transformations
 
-### 2. Metadata Integration
+### Table Naming Rules
 
-The project uses **standardized keys** for joining metadata across systems:
+Tables undergo multiple transformations via nested REPLACE statements:
+- Plurals to singular (e.g., `JOBS` → `JOB`, `USERS` → `USER`)
+- Remove prefixes: `LOOKUP_`, `^LOOKUP_`
+- Remove suffixes: `_FACT`, `_FACT_FK`, `_LOOKUP`, `_TYPES` → `_TYPE`
+- Specific mappings (e.g., `CANDIDATETOOLSACTIONLOOKUP` → `CANDIDATE_TOOLS_ACTION`)
+- Typo corrections (e.g., `ECRUITER` → `RECRUITER`, `RRECRUITER` → `RECRUITER`)
 
-- `SCHEMA_ONLY_KEY`: Uppercase schema name
-- `TABLE_ONLY_KEY`: Uppercase table name with underscores removed
-- `COLUMN_ONLY_KEY`: Uppercase column name with underscores removed
-- `TABLE_KEY`: `{SCHEMA_ONLY_KEY}.{TABLE_ONLY_KEY}`
-- `COLUMN_KEY`: `{SCHEMA_ONLY_KEY}.{TABLE_ONLY_KEY}.{COLUMN_ONLY_KEY}` (primary identifier)
+### Column Naming Rules
 
-**Key Metadata Tables**:
+- Remove typos: `ECRUITER` → `RECRUITER`, `RRECRUITER` → `RECRUITER`
+- Date standardization: `DATE_OF_BIRTH` → `BIRTH_DATE`
+- ID suffix: `_BW$` → `_ID`
+- Timestamp columns: Base name + `_AT` suffix (e.g., `CREATED_AT`)
+- Date columns: Base name + `_DATE` suffix (e.g., `BIRTH_DATE`)
 
-- `MS_RAW.DBT_META.SF_TABLES`: Joined Snowflake + MSSQL table metadata
-- `MS_RAW.DBT_META.SF_COLUMNS`: Joined Snowflake + MSSQL column metadata
-- `MS_RAW.DBT_META.META_COLUMNS`: Comprehensive metadata table driving dbt staging generation
+### Primary Key Rules
 
-### 3. META_COLUMNS Table Structure
+- **Single-column PKs**: Renamed to `{TABLE_NAME}_ID` when possible
+- **Two-column PKs**: Composite key generated as `COL1 * 10^12 + COL2`, named `{TABLE_NAME}_ID`
+- **Multi-table PKs** (PK_TABLES > 1): Identifies shared PKs across related tables
 
-This is the **central metadata table** for dbt model generation, containing:
+## Working with the Codebase
 
-**Section 1: Identity & Keys** - Standardized keys for uniqueness
-**Section 2: MSSQL Source Metadata** - Original MSSQL column definitions (MS_*)
-**Section 3: Snowflake RAW Metadata** - Snowflake raw layer definitions (SF_RAW_*)
-**Section 4: dbt Staging Definition** - Target staging model specifications (DBT_STG_*)
-  - `DBT_STG_COLUMN_NAME`: Target column name (NULL to exclude)
-  - `DBT_STG_DATA_TYPE`: Target data type
-  - `DBT_STG_TRANSFORMATION`: SQL logic for transformation
-  - `DBT_STG_IS_EXCLUDED`: Flag to exclude from staging
-**Section 5: Primary Key Metadata** - PK constraints and surrogate key flags
-**Section 6: Foreign Key Metadata** - FK relationships and parent references
-**Section 7: Source Tracking** - Column source ('MSSQL', 'DERIVED', 'SURROGATE', 'BUSINESS')
+### Executing the Pipeline
 
-### 4. Surrogate Key Strategy
+The scripts must be run sequentially in numeric order (11 → 18) in Snowflake:
 
-**Composite Primary Keys**:
-- Tables with multi-column PKs get a generated surrogate key: `{table_name}_id`
-- Transformation uses dbt_utils: `{{ dbt_utils.generate_surrogate_key([...]) }}`
-- Original PK columns remain but are no longer marked as PK in metadata
-
-**Composite Foreign Keys**:
-- Child tables with 2-column FKs to composite PK tables get a new surrogate FK column
-- Original FK columns remain but FK metadata is cleared
-- Surrogate FK column references the parent's surrogate PK
-
-### 5. Column Name Standardization
-
-**Timestamp/Date Columns**:
-- Columns with patterns `DATE_*`, `*_DATE_*`, `*_DATE` are normalized
-- `DATE_OF_BIRTH` → `BIRTH_DATE`
-- Date parts removed from column names where appropriate
-- Type standardization: MSSQL datetime → Snowflake DATE or TIMESTAMP_NTZ
-
-## Working with Metadata
-
-### Querying META_COLUMNS for a Table
-
-```sql
-SELECT
-    TABLE_KEY,
-    DBT_STG_COLUMN_NAME,
-    DBT_STG_DATA_TYPE,
-    IS_PRIMARY_KEY,
-    IS_FOREIGN_KEY,
-    FK_PARENT_FULL_KEY,
-    DBT_STG_TRANSFORMATION,
-    COLUMN_SOURCE,
-    IS_NEW_COLUMN
-FROM MS_RAW.DBT_META.META_COLUMNS
-WHERE TABLE_KEY = 'DBO.TABLENAME'
-  AND DBT_STG_IS_EXCLUDED = FALSE
-ORDER BY DBT_STG_ORDINAL_POSITION;
+```bash
+# Execute scripts in Snowflake SQL worksheet in this order:
+# 11_foundation.sql
+# 12_tables.sql
+# 13_columns.sql
+# 14a_timestamp_column_analysis.sql
+# 14b_timestamps_dates.sql
+# 15_dlt_load_id.sql
+# 16_row_iteration.sql
+# 17_pk.sql
+# 18_fk.sql
 ```
 
-### Adding Business Logic Columns
+Each script contains validation queries (e.g., `SELECT COUNT(*)`) to verify transformations.
 
-```sql
-INSERT INTO MS_RAW.DBT_META.META_COLUMNS (
-    SCHEMA_ONLY_KEY, TABLE_ONLY_KEY, COLUMN_ONLY_KEY,
-    TABLE_KEY, COLUMN_KEY,
-    DBT_STG_COLUMN_NAME, DBT_STG_DATA_TYPE,
-    DBT_STG_TRANSFORMATION,
-    COLUMN_SOURCE, IS_NEW_COLUMN,
-    CREATED_BY
-) VALUES (
-    'DBO', 'EMPLOYEES', 'FULLNAME',
-    'DBO.EMPLOYEES', 'DBO.EMPLOYEES.FULLNAME',
-    'full_name', 'VARCHAR(500)',
-    'CONCAT(first_name, '' '', last_name)',
-    'BUSINESS', TRUE,
-    CURRENT_USER()
-);
-```
+### Python Environment
 
-### Excluding PII or Deprecated Columns
+- Python version: **3.11.8** (managed via pyenv, see `.python-version`)
+- Virtual environment: **`.venv/`** (excluded from git)
+- dbt is NOT currently installed in the venv
 
-```sql
-UPDATE MS_RAW.DBT_META.META_COLUMNS
-SET DBT_STG_IS_EXCLUDED = TRUE,
-    NOTES = 'PII field - excluded from staging'
-WHERE COLUMN_KEY = 'DBO.EMPLOYEES.SSN';
-```
+### Important Constraints
 
-## dbt Development
+- **PRICEBOOK_ENTRY table** is explicitly excluded (has 5-column PK, too complex)
+- **DLT tables** (`_DLT%` prefix) are excluded from source tables
+- All transformations preserve `SF_TABLE_SCHEMA` and `SF_TABLE_NAME` for traceability
 
-### Staging Model Conventions
+## Key Patterns to Follow
 
-- Models follow dbt best practices
-- Source schemas: Use MSSQL schema names (DBO, JOBS, etc.)
-- Model naming: `stg_reedonline__{schema}__{table}.sql`
-- Column selection based on `META_COLUMNS.DBT_STG_IS_EXCLUDED = FALSE`
-- Apply transformations from `DBT_STG_TRANSFORMATION`
-- Surrogate keys use dbt_utils package
+1. **Transient Tables**: Working tables like `T_PRIMARY_KEYS` are transient and cleaned up after use
+2. **Views**: Views like `V_PRIMARY_KEYS_TWO` provide intermediate transformation logic
+3. **Validation Queries**: Each major transformation includes COUNT and sample queries
+4. **Insert Safety**: Scripts check for existing records before INSERT to prevent duplicates
+5. **Schema Qualification**: Always use full schema qualification (`MS_RAW.STG_META.TABLE_NAME`)
 
-### Generating dbt Models
+## Git Workflow
 
-The metadata in `META_COLUMNS` should drive dbt model generation:
-1. Query `META_COLUMNS` for table columns where `DBT_STG_IS_EXCLUDED = FALSE`
-2. Order by `DBT_STG_ORDINAL_POSITION`
-3. Apply `DBT_STG_TRANSFORMATION` if specified, otherwise use raw column
-4. Include PK and FK tests based on metadata flags
-5. Add surrogate key generation for `IS_SURROGATE_KEY = TRUE` columns
+Current branch: `main` (also the main branch for PRs)
 
-## Development Workflow
-
-1. **Explore Metadata**: Query MS_RAW.DBT_META tables to understand table structures
-2. **Review SQL Scripts**: Check `sql_scripts/` for context on metadata transformations
-3. **Generate Staging Models**: Use META_COLUMNS to create dbt staging models
-4. **Test**: Validate PK uniqueness, FK relationships, and data types
-5. **Document**: Add column descriptions from `DBT_STG_DESCRIPTION` field
-
-## Important Notes
-
-- **Excluded Table**: `PRICEBOOK_ENTRY` (PRICEBOOKENTRY) is excluded from all metadata queries
-- **Key Standardization**: All keys use UPPER case with underscores removed for matching
-- **Schema Mapping**: Always map between REEDONLINE_* (source) and MS_RAW schemas
-- **Metadata First**: Always consult META_COLUMNS before writing staging models
-- **Surrogate Keys**: Single-column PKs/FKs are preserved; multi-column keys use surrogates
+Recent activity focuses on primary key and foreign key metadata transformation (commits: "pk", "V20251216").

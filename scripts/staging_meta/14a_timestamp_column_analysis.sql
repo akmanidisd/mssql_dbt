@@ -1,3 +1,5 @@
+-- run only once !!!!
+
 CREATE OR REPLACE TABLE MS_RAW.DBT_META.timestamp_column_analysis (
     table_catalog VARCHAR,
     table_schema VARCHAR,
