@@ -1,0 +1,8 @@
+# Python dependencies for mssql_dbt project
+
+# Snowflake connector for database operations
+snowflake-connector-python>=3.6.0,<4.0.0
+
+# Optional: dbt for future staging model development
+# Uncomment when ready to use dbt:
+# dbt-snowflake>=1.7.0,<2.0.0
