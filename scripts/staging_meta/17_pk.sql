@@ -77,7 +77,7 @@ CREATE OR REPLACE TRANSIENT TABLE MS_RAW.STG_META.T_PRIMARY_KEYS AS
                LAST_VALUE(sfc.NEW_COLUMN_NAME)  
                     OVER (PARTITION BY sft.SF_TABLE_SCHEMA, sft.SF_TABLE_NAME ORDER BY pk.ordinal_position) 
                                           AS KEY_PART_2,
-               KEY_PART_1 || ' * 10^12 + ' || KEY_PART_2
+               KEY_PART_1 || ' * POWER(10, 12) + ' || KEY_PART_2
                                           AS NEW_PRIMARY_KEY_EXPRESSION,
                KEY_PART_1 || ',' || KEY_PART_2
                                           AS NEW_PRIMARY_KEY_UNIQUE_COLUMNS,

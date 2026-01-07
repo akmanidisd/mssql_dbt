@@ -48,16 +48,11 @@ WITH base_columns AS (
             ) THEN 2
             WHEN sfc.NEW_COLUMN_NAME != sft.NEW_PRIMARY_KEY_NAME
                  AND ENDSWITH(sfc.NEW_COLUMN_NAME, '_ID') THEN 3
-            WHEN sfc.DATA_TYPE IN ('DATE')
-                 OR sfc.NEW_COLUMN_TYPE IN ('DATE', 'TIMESTAMP_NTZ')
-                 OR ENDSWITH(sfc.NEW_COLUMN_NAME, '_DATE')
-                 OR ENDSWITH(sfc.NEW_COLUMN_NAME, '_AT')
-                 OR ENDSWITH(sfc.NEW_COLUMN_NAME, '_FROM')
-                 OR ENDSWITH(sfc.NEW_COLUMN_NAME, '_UNTIL') THEN 4
-            WHEN sfc.DATA_TYPE IN ('BOOLEAN')
-                 OR STARTSWITH(sfc.NEW_COLUMN_NAME, 'IS_')
-                 OR STARTSWITH(sfc.NEW_COLUMN_NAME, 'HAS_') THEN 5
-            WHEN sfc.DATA_TYPE IN ('TEXT', 'VARCHAR') THEN 6
+            WHEN sfc.NEW_COLUMN_TYPE IN ('DATE', 'TIMESTAMP_NTZ') 
+              OR sfc.DATA_TYPE IN ('DATE', 'TIMESTAMP_NTZ') THEN 4
+            WHEN sfc.DATA_TYPE IN ('BOOLEAN') THEN 5
+            WHEN sfc.DATA_TYPE IN ('TEXT', 'VARCHAR') 
+             AND NOT sfc.SF_COLUMN_NAME ILIKE ANY ('_DLT%') THEN 6
             WHEN sfc.DATA_TYPE IN ('NUMBER', 'NUMERIC', 'INTEGER', 'FLOAT', 'DECIMAL') THEN 7
             WHEN sfc.SF_COLUMN_NAME ILIKE ANY ('_DLT%', '%ROW_ITERATION%', 'TIME_STAMP') THEN 8
             ELSE 9
@@ -110,16 +105,69 @@ ORDER BY SF_TABLE_SCHEMA, SF_TABLE_NAME, COLUMN_CATEGORY, NEW_COLUMN_NAME;
 -- STEP 2: Generate the CREATE VIEW scripts
 -- ================================================================
 CREATE OR REPLACE VIEW MS_RAW.STG_META.V_GENERATED_VIEW_SCRIPTS AS
-WITH column_lists AS (
+WITH column_rows AS (
+    SELECT
+        SF_TABLE_SCHEMA,
+        SF_TABLE_NAME,
+        NEW_TABLE_NAME,
+        COLUMN_CATEGORY,
+        COLUMN_SELECT_STATEMENT,
+        COLUMN_ORDER * 10 + 5 AS NEW_COLUMN_ORDER
+    FROM MS_RAW.STG_META.V_COLUMN_CLASSIFICATION 
+)
+, column_groups AS (
+    SELECT
+        SF_TABLE_SCHEMA,
+        SF_TABLE_NAME,
+        NEW_TABLE_NAME,
+        COLUMN_CATEGORY,
+        ' -- Category: ' || COLUMN_CATEGORY || ' ' ||
+        CASE COLUMN_CATEGORY
+            WHEN 1 THEN 'PRIMARY KEY'
+            WHEN 2 THEN 'SECONDARY KEY'
+            WHEN 3 THEN '_ID'
+            WHEN 4 THEN 'DATE/TIMESTAMP'
+            WHEN 5 THEN 'BOOLEAN'
+            WHEN 6 THEN 'CHAR/VARCHAR'
+            WHEN 7 THEN 'NUMERIC'
+            WHEN 8 THEN 'META'
+            WHEN 9 THEN 'OTHER/UNKNOWN'
+            ELSE '??????????'
+         END
+        AS COLUMN_SELECT_STATEMENT,
+        MIN(NEW_COLUMN_ORDER - 5) AS NEW_COLUMN_ORDER
+    FROM column_rows
+    GROUP BY ALL
+)
+, column_all AS (
+    SELECT
+        SF_TABLE_SCHEMA,
+        SF_TABLE_NAME,
+        NEW_TABLE_NAME,
+        COLUMN_CATEGORY,
+        COLUMN_SELECT_STATEMENT,
+        NEW_COLUMN_ORDER
+    FROM column_rows
+    UNION ALL
+    SELECT
+        SF_TABLE_SCHEMA,
+        SF_TABLE_NAME,
+        NEW_TABLE_NAME,
+        COLUMN_CATEGORY,
+        COLUMN_SELECT_STATEMENT,
+        NEW_COLUMN_ORDER
+    FROM column_groups
+)
+, column_lists AS (
     SELECT
         SF_TABLE_SCHEMA,
         SF_TABLE_NAME,
         NEW_TABLE_NAME,
         LISTAGG(
-            '    ' || COLUMN_SELECT_STATEMENT,
+            '    ' || COLUMN_SELECT_STATEMENT || -- ' ' || COLUMN_CATEGORY || ' ' || NEW_COLUMN_ORDER,
             ',\n'
-        ) WITHIN GROUP (ORDER BY COLUMN_ORDER) AS COLUMN_LIST
-    FROM MS_RAW.STG_META.V_COLUMN_CLASSIFICATION
+        ) WITHIN GROUP (ORDER BY NEW_COLUMN_ORDER) AS COLUMN_LIST
+    FROM column_all
     GROUP BY SF_TABLE_SCHEMA, SF_TABLE_NAME, NEW_TABLE_NAME
 )
 SELECT
@@ -135,10 +183,11 @@ SELECT
     'CREATE OR REPLACE VIEW MS_RAW.' || SF_TABLE_SCHEMA || '.STG_' || NEW_TABLE_NAME || ' AS\n' ||
     'SELECT\n' ||
     COLUMN_LIST || '\n' ||
-    'FROM MS_RAW.' || SF_TABLE_SCHEMA || '.' || SF_TABLE_NAME || '\n' ||
-    ';\n\n' ||
-    '-- Grant permissions\n' ||
-    'GRANT SELECT ON VIEW MS_RAW.' || SF_TABLE_SCHEMA || '.STG_' || NEW_TABLE_NAME || ' TO ROLE ACCOUNTADMIN;\n' AS DDL_SCRIPT
+    'FROM ROL_RAW.' || SF_TABLE_SCHEMA || '.' || SF_TABLE_NAME || '\n' ||
+    ';\n'
+--    '-- Grant permissions\n' ||
+--    'GRANT SELECT ON VIEW MS_RAW.' || SF_TABLE_SCHEMA || '.STG_' || NEW_TABLE_NAME || ' TO ROLE ACCOUNTADMIN;\n'
+     AS DDL_SCRIPT
 FROM column_lists
 ORDER BY SF_TABLE_SCHEMA, NEW_TABLE_NAME;
 
@@ -166,10 +215,13 @@ ORDER BY SF_TABLE_SCHEMA, NEW_TABLE_NAME;
 -- STEP 5: Export scripts by schema
 -- ================================================================
 -- To get all scripts for a specific schema:
-SELECT DDL_SCRIPT
+SELECT
+-- DDL_SCRIPT
+    LISTAGG(DDL_SCRIPT, '\n') WITHIN GROUP (ORDER BY NEW_TABLE_NAME) AS "--DDL_SCRIPT"
 FROM MS_RAW.STG_META.V_GENERATED_VIEW_SCRIPTS
 WHERE SF_TABLE_SCHEMA = 'REEDONLINE_DBO'
-ORDER BY NEW_TABLE_NAME;
+-- ORDER BY NEW_TABLE_NAME
+;
 
 -- ================================================================
 -- STEP 6: Statistics by schema
