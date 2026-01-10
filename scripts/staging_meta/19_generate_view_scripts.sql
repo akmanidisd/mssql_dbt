@@ -47,7 +47,8 @@ WITH base_columns AS (
                   AND sk.FK_NEW_COLUMN_NAME = sfc.NEW_COLUMN_NAME
             ) THEN 2
             WHEN sfc.NEW_COLUMN_NAME != sft.NEW_PRIMARY_KEY_NAME
-                 AND ENDSWITH(sfc.NEW_COLUMN_NAME, '_ID') THEN 3
+                 AND ENDSWITH(sfc.NEW_COLUMN_NAME, '_ID') 
+                 AND sfc.DATA_TYPE IN ('NUMBER', 'NUMERIC', 'INTEGER') THEN 3
             WHEN sfc.NEW_COLUMN_TYPE IN ('DATE', 'TIMESTAMP_NTZ') 
               OR sfc.DATA_TYPE IN ('DATE', 'TIMESTAMP_NTZ') THEN 4
             WHEN sfc.DATA_TYPE IN ('BOOLEAN') THEN 5

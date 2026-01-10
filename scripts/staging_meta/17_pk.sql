@@ -1,3 +1,11 @@
+-- for _BW ADD NEW COLUMN REPLACING _BW with _ID
+-- EXCLUDING NEW TABLE NAME 'USER_CONTACT_PREF' (IT HAS KEY WITH 2 COLUMN)
+-- THE NEW _ID WILL BE FK IF NEW_TABLE_NAME <> PREFIX OR PK IF = PREFIX
+-- for table USER_CONTACT_PREF the new key will be defined from the SURROGATE KEY
+
+
+
+
 CREATE OR REPLACE TRANSIENT TABLE MS_RAW.STG_META.T_PRIMARY_KEYS AS
     SELECT
         sfc.SF_TABLE_SCHEMA,
@@ -77,8 +85,10 @@ CREATE OR REPLACE TRANSIENT TABLE MS_RAW.STG_META.T_PRIMARY_KEYS AS
                LAST_VALUE(sfc.NEW_COLUMN_NAME)  
                     OVER (PARTITION BY sft.SF_TABLE_SCHEMA, sft.SF_TABLE_NAME ORDER BY pk.ordinal_position) 
                                           AS KEY_PART_2,
-               KEY_PART_1 || ' * POWER(10, 12) + ' || KEY_PART_2
-                                          AS NEW_PRIMARY_KEY_EXPRESSION,
+               CASE WHEN sft.SF_TABLE_NAME LIKE 'USER_CONTACT_PREF%'
+                    THEN KEY_PART_2 || ' * POWER(10, 12) + ' || KEY_PART_1
+                    ELSE KEY_PART_1 || ' * POWER(10, 12) + ' || KEY_PART_2
+               END                        AS NEW_PRIMARY_KEY_EXPRESSION,
                KEY_PART_1 || ',' || KEY_PART_2
                                           AS NEW_PRIMARY_KEY_UNIQUE_COLUMNS,
                

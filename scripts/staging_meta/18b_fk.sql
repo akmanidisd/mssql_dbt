@@ -77,10 +77,12 @@ SELECT
     pk_cols.column_ordinal    AS pk_ordinal_position,
     pk_cols.total_columns     AS pk_total_columns
 FROM ROL_RAW.REEDONLINE_META.REFERENTIAL_CONSTRAINTS rc
-JOIN fk_cols
+INNER JOIN MS_RAW.STG_META.MS_INDEXES idx
+    ON rc.UNIQUE_CONSTRAINT_NAME = idx.INDEX_NAME
+INNER JOIN fk_cols
   ON rc.CONSTRAINT_NAME = fk_cols.CONSTRAINT_NAME
-JOIN pk_cols
-  ON rc.UNIQUE_CONSTRAINT_NAME = pk_cols.CONSTRAINT_NAME
+INNER JOIN pk_cols
+  ON idx.PK_NAME               = pk_cols.CONSTRAINT_NAME
  AND fk_cols.column_ordinal    = pk_cols.column_ordinal
 ORDER BY
     fk_TABLE_SCHEMA,

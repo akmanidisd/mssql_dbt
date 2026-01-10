@@ -37,7 +37,6 @@ UPDATE MS_RAW.STG_META.SF_COLUMNS
                          ,'ECRUITER','RECRUITER')
                          ,'RRECRUITER','RECRUITER')
                          ,'DATE_OF_BIRTH','BIRTH_DATE')
-                         ,'_BW$','_BW_ID')
                          ,'^','') 
                          ,'$','') 
 ;
