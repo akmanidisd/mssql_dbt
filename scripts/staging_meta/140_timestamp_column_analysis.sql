@@ -1,5 +1,5 @@
 -- run only once !!!!
-
+/*
 CREATE OR REPLACE TABLE MS_RAW.DBT_META.timestamp_column_analysis (
     table_catalog VARCHAR,
     table_schema VARCHAR,
@@ -66,6 +66,8 @@ BEGIN
     
     RETURN :full_query;
 END;
+
+*/
 
 SELECT * FROM MS_RAW.DBT_META.timestamp_column_analysis
 ;
