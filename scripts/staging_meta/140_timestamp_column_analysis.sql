@@ -1,9 +1,9 @@
 -- run only once !!!!
 /*
 CREATE OR REPLACE TABLE MS_RAW.STG_META.TIMESTAMP_COLUMN_ANALYSIS (
-    SF_TABLE_SCHEMA VARCHAR,
-    SF_TABLE_NAME VARCHAR,
-    SF_COLUMN_NAME VARCHAR,
+    TABLE_SCHEMA VARCHAR,
+    TABLE_NAME VARCHAR,
+    COLUMN_NAME VARCHAR,
     TOTAL_ROWS NUMBER,
     DATE_ONLY_COUNT NUMBER,
     HAS_TIME_COUNT NUMBER,
@@ -20,23 +20,23 @@ DECLARE
     full_query VARCHAR := '';
     cur CURSOR FOR 
         SELECT 
-            SF_TABLE_SCHEMA,
-            SF_TABLE_NAME,
-            SF_COLUMN_NAME,
+            TABLE_SCHEMA,
+            TABLE_NAME,
+            COLUMN_NAME,
         FROM MS_RAW.STG_META.SF_COLUMNS
         WHERE DATA_TYPE ILIKE 'TIMESTAMP_%'
         ORDER BY ALL;
 BEGIN
     -- Loop through each timestamp column
     FOR record IN cur DO
-        schema_name := record.SF_TABLE_SCHEMA;
-        table_name := record.SF_TABLE_NAME;
-        column_name := record.SF_COLUMN_NAME;        
+        schema_name := record.TABLE_SCHEMA;
+        table_name := record.TABLE_NAME;
+        column_name := record.COLUMN_NAME;        
 
         -- Build dynamic SQL to analyze the column
         query := '
             INSERT INTO MS_RAW.STG_META.TIMESTAMP_COLUMN_ANALYSIS 
-                (SF_TABLE_SCHEMA, SF_TABLE_NAME, SF_COLUMN_NAME,
+                (TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME,
                  TOTAL_ROWS, DATE_ONLY_COUNT, HAS_TIME_COUNT, IS_DATE_ONLY)
             SELECT 
                 ''' || schema_name || ''',
@@ -67,7 +67,6 @@ ORDER BY ALL
 ;
 
 SELECT * FROM MS_RAW.STG_META.TIMESTAMP_COLUMN_ANALYSIS
-WHERE SF_COLUMN_NAME LIKE '%BIRTH%'
+WHERE COLUMN_NAME LIKE '%BIRTH%'
 ORDER BY ALL
 ;
-
