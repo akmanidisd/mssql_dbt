@@ -18,8 +18,12 @@ SELECT
     SF_INFO_COLUMNS.DATETIME_PRECISION,
 
     -- NEW
-    NULL::STRING           AS BASE_COLUMN_NAME,
-    NULL::STRING           AS NEW_COLUMN_NAME,
+    CASE WHEN SF_INFO_COLUMNS.COLUMN_NAME = 'ID'
+         THEN SF_INFO_COLUMNS.TABLE_NAME
+    END::STRING            AS BASE_COLUMN_NAME,
+    CASE WHEN SF_INFO_COLUMNS.COLUMN_NAME = 'ID'
+         THEN SF_INFO_COLUMNS.TABLE_NAME || '_ID'
+    END::STRING            AS NEW_COLUMN_NAME,
     NULL::STRING           AS NEW_COLUMN_TYPE,
     NULL::STRING           AS NEW_COLUMN_EXPRESSION,
 
@@ -38,12 +42,14 @@ SELECT COUNT(*) FROM MS_RAW.STG_META.SF_COLUMNS;
 
 -- 3352
 UPDATE MS_RAW.STG_META.SF_COLUMNS
-   SET NEW_COLUMN_NAME = REPLACE(REPLACE(REPLACE(
-                         REPLACE(REPLACE(
+   SET NEW_COLUMN_NAME = REPLACE(REPLACE(REPLACE(REPLACE(
+                         REPLACE(REPLACE(REPLACE(
                           '^' || COLUMN_NAME || '$'
                          ,'ECRUITER','RECRUITER')
                          ,'RRECRUITER','RECRUITER')
-                         ,'DATE_OF_BIRTH','BIRTH_DATE')
+                         ,'^DATE_OF_BIRTH$','BIRTH_DATE')
+                         ,'^CREATED_USER_ID$','CREATED_BY_USER_ID')
+                         ,'^UPDATED_USER_ID$','UPDATED_BY_USER_ID')
                          ,'^','') 
                          ,'$','') 
 ;
