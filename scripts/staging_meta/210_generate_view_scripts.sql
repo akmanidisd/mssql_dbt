@@ -10,9 +10,9 @@
 CREATE OR REPLACE VIEW MS_RAW.STG_META.V_COLUMN_CLASSIFICATION AS
 WITH base_columns AS (
     SELECT
-        sfc.SF_TABLE_SCHEMA,
-        sfc.SF_TABLE_NAME,
-        sfc.SF_COLUMN_NAME,
+        sfc.TABLE_SCHEMA,
+        sfc.TABLE_NAME,
+        sfc.COLUMN_NAME,
         sfc.NEW_COLUMN_NAME,
         sfc.NEW_COLUMN_TYPE,
         sfc.NEW_COLUMN_EXPRESSION,
@@ -30,48 +30,47 @@ WITH base_columns AS (
             WHEN EXISTS (
                 SELECT 1
                 FROM MS_RAW.STG_META.T_SECONDARY_KEYS sk
-                WHERE sk.FK_TABLE_SCHEMA = sfc.SF_TABLE_SCHEMA
-                  AND sk.FK_TABLE_NAME = sfc.SF_TABLE_NAME
+                WHERE sk.FK_TABLE_SCHEMA    = sfc.TABLE_SCHEMA
+                  AND sk.FK_TABLE_NAME      = sfc.TABLE_NAME
                   AND sk.FK_NEW_COLUMN_NAME = sfc.NEW_COLUMN_NAME
             ) THEN 1
             ELSE 0
         END AS IS_FK,
         -- Determine column category for ordering
         CASE
+            WHEN STARTSWITH(sfc.NEW_COLUMN_NAME,'_') THEN 8
             WHEN sfc.NEW_COLUMN_NAME = sft.NEW_PRIMARY_KEY_NAME THEN 1
             WHEN EXISTS (
                 SELECT 1
                 FROM MS_RAW.STG_META.T_SECONDARY_KEYS sk
-                WHERE sk.FK_TABLE_SCHEMA = sfc.SF_TABLE_SCHEMA
-                  AND sk.FK_TABLE_NAME = sfc.SF_TABLE_NAME
+                WHERE sk.FK_TABLE_SCHEMA    = sfc.TABLE_SCHEMA
+                  AND sk.FK_TABLE_NAME      = sfc.TABLE_NAME
                   AND sk.FK_NEW_COLUMN_NAME = sfc.NEW_COLUMN_NAME
             ) THEN 2
             WHEN sfc.NEW_COLUMN_NAME != sft.NEW_PRIMARY_KEY_NAME
                  AND ENDSWITH(sfc.NEW_COLUMN_NAME, '_ID') 
-                 AND sfc.DATA_TYPE IN ('NUMBER', 'NUMERIC', 'INTEGER') THEN 3
+                 AND COALESCE(sfc.DATA_TYPE,'NUMERIC') IN ('NUMBER', 'NUMERIC', 'INTEGER') THEN 3
             WHEN sfc.NEW_COLUMN_TYPE IN ('DATE', 'TIMESTAMP_NTZ') 
               OR sfc.DATA_TYPE IN ('DATE', 'TIMESTAMP_NTZ') THEN 4
             WHEN sfc.DATA_TYPE IN ('BOOLEAN') THEN 5
-            WHEN sfc.DATA_TYPE IN ('TEXT', 'VARCHAR') 
-             AND NOT sfc.SF_COLUMN_NAME ILIKE ANY ('_DLT%') THEN 6
+            WHEN sfc.DATA_TYPE IN ('TEXT', 'VARCHAR') THEN 6
             WHEN sfc.DATA_TYPE IN ('NUMBER', 'NUMERIC', 'INTEGER', 'FLOAT', 'DECIMAL') THEN 7
-            WHEN sfc.SF_COLUMN_NAME ILIKE ANY ('_DLT%', '%ROW_ITERATION%', 'TIME_STAMP') THEN 8
             ELSE 9
         END AS COLUMN_CATEGORY,
         CASE
             WHEN sfc.NEW_COLUMN_EXPRESSION IS NOT NULL THEN sfc.NEW_COLUMN_EXPRESSION
-            ELSE sfc.SF_COLUMN_NAME
+            ELSE sfc.COLUMN_NAME
         END AS COLUMN_EXPRESSION
     FROM MS_RAW.STG_META.SF_COLUMNS sfc
     INNER JOIN MS_RAW.STG_META.SF_TABLES sft
-        ON sfc.SF_TABLE_SCHEMA = sft.SF_TABLE_SCHEMA
-       AND sfc.SF_TABLE_NAME = sft.SF_TABLE_NAME
-    WHERE sft.SF_TABLE_NAME != 'PRICEBOOK_ENTRY'
+        ON sfc.TABLE_SCHEMA = sft.TABLE_SCHEMA
+       AND sfc.TABLE_NAME   = sft.TABLE_NAME
+     WHERE sft.TABLE_NAME != 'PRICEBOOK_ENTRY'
 )
 SELECT
-    SF_TABLE_SCHEMA,
-    SF_TABLE_NAME,
-    SF_COLUMN_NAME,
+    TABLE_SCHEMA,
+    TABLE_NAME,
+    COLUMN_NAME,
     NEW_COLUMN_NAME,
     NEW_COLUMN_TYPE,
     NEW_COLUMN_EXPRESSION,
@@ -85,22 +84,22 @@ SELECT
     -- Generate the column definition for SELECT statement
     CASE
         WHEN NEW_COLUMN_EXPRESSION IS NOT NULL AND NEW_COLUMN_TYPE IS NOT NULL THEN
-            REPLACE(NEW_COLUMN_EXPRESSION, '{COLUMN_NAME}', SF_COLUMN_NAME) || ' AS ' || NEW_COLUMN_NAME
+            REPLACE(NEW_COLUMN_EXPRESSION, '{COLUMN_NAME}', COLUMN_NAME) || ' AS ' || NEW_COLUMN_NAME
         WHEN NEW_COLUMN_TYPE IS NOT NULL AND CONTAINS(NEW_COLUMN_TYPE, '::') THEN
-            SF_COLUMN_NAME || '::' || NEW_COLUMN_TYPE || ' AS ' || NEW_COLUMN_NAME
+            COLUMN_NAME || '::' || NEW_COLUMN_TYPE || ' AS ' || NEW_COLUMN_NAME
         WHEN NEW_COLUMN_TYPE IS NOT NULL AND CONTAINS(NEW_COLUMN_TYPE, 'TO_NUMBER') THEN
-            REPLACE(NEW_COLUMN_TYPE, '{COLUMN_NAME}', SF_COLUMN_NAME) || ' AS ' || NEW_COLUMN_NAME
-        WHEN NEW_COLUMN_NAME != SF_COLUMN_NAME THEN
-            SF_COLUMN_NAME || ' AS ' || NEW_COLUMN_NAME
+            REPLACE(NEW_COLUMN_TYPE, '{COLUMN_NAME}', COLUMN_NAME) || ' AS ' || NEW_COLUMN_NAME
+        WHEN NEW_COLUMN_NAME != COLUMN_NAME THEN
+            COLUMN_NAME || ' AS ' || NEW_COLUMN_NAME
         ELSE
-            SF_COLUMN_NAME
+            COLUMN_NAME
     END AS COLUMN_SELECT_STATEMENT,
     ROW_NUMBER() OVER (
-        PARTITION BY SF_TABLE_SCHEMA, SF_TABLE_NAME
+        PARTITION BY TABLE_SCHEMA, TABLE_NAME
         ORDER BY COLUMN_CATEGORY, NEW_COLUMN_NAME
     ) AS COLUMN_ORDER
 FROM base_columns
-ORDER BY SF_TABLE_SCHEMA, SF_TABLE_NAME, COLUMN_CATEGORY, NEW_COLUMN_NAME;
+ORDER BY TABLE_SCHEMA, TABLE_NAME, COLUMN_CATEGORY, NEW_COLUMN_NAME;
 
 -- ================================================================
 -- STEP 2: Generate the CREATE VIEW scripts
@@ -108,8 +107,8 @@ ORDER BY SF_TABLE_SCHEMA, SF_TABLE_NAME, COLUMN_CATEGORY, NEW_COLUMN_NAME;
 CREATE OR REPLACE VIEW MS_RAW.STG_META.V_GENERATED_VIEW_SCRIPTS AS
 WITH column_rows AS (
     SELECT
-        SF_TABLE_SCHEMA,
-        SF_TABLE_NAME,
+        TABLE_SCHEMA,
+        TABLE_NAME,
         NEW_TABLE_NAME,
         COLUMN_CATEGORY,
         COLUMN_SELECT_STATEMENT,
@@ -118,8 +117,8 @@ WITH column_rows AS (
 )
 , column_groups AS (
     SELECT
-        SF_TABLE_SCHEMA,
-        SF_TABLE_NAME,
+        TABLE_SCHEMA,
+        TABLE_NAME,
         NEW_TABLE_NAME,
         COLUMN_CATEGORY,
         ' -- Category: ' || COLUMN_CATEGORY || ' ' ||
@@ -142,8 +141,8 @@ WITH column_rows AS (
 )
 , column_all AS (
     SELECT
-        SF_TABLE_SCHEMA,
-        SF_TABLE_NAME,
+        TABLE_SCHEMA,
+        TABLE_NAME,
         NEW_TABLE_NAME,
         COLUMN_CATEGORY,
         COLUMN_SELECT_STATEMENT,
@@ -151,8 +150,8 @@ WITH column_rows AS (
     FROM column_rows
     UNION ALL
     SELECT
-        SF_TABLE_SCHEMA,
-        SF_TABLE_NAME,
+        TABLE_SCHEMA,
+        TABLE_NAME,
         NEW_TABLE_NAME,
         COLUMN_CATEGORY,
         COLUMN_SELECT_STATEMENT,
@@ -161,47 +160,47 @@ WITH column_rows AS (
 )
 , column_lists AS (
     SELECT
-        SF_TABLE_SCHEMA,
-        SF_TABLE_NAME,
+        TABLE_SCHEMA,
+        TABLE_NAME,
         NEW_TABLE_NAME,
         LISTAGG(
             '    ' || COLUMN_SELECT_STATEMENT || -- ' ' || COLUMN_CATEGORY || ' ' || NEW_COLUMN_ORDER,
             ',\n'
         ) WITHIN GROUP (ORDER BY NEW_COLUMN_ORDER) AS COLUMN_LIST
     FROM column_all
-    GROUP BY SF_TABLE_SCHEMA, SF_TABLE_NAME, NEW_TABLE_NAME
+    GROUP BY TABLE_SCHEMA, TABLE_NAME, NEW_TABLE_NAME
 )
 SELECT
-    SF_TABLE_SCHEMA,
-    SF_TABLE_NAME,
+    TABLE_SCHEMA,
+    TABLE_NAME,
     NEW_TABLE_NAME,
-    'scripts/staging_snowflake/' || SF_TABLE_SCHEMA || '/STG_' || NEW_TABLE_NAME || '.sql' AS FILE_PATH,
+    'scripts/staging_snowflake/' || TABLE_SCHEMA || '/STG_' || NEW_TABLE_NAME || '.sql' AS FILE_PATH,
     '-- ================================================================\n' ||
-    '-- View: MS_RAW.' || SF_TABLE_SCHEMA || '.STG_' || NEW_TABLE_NAME || '\n' ||
-    '-- Source: MS_RAW.' || SF_TABLE_SCHEMA || '.' || SF_TABLE_NAME || '\n' ||
+    '-- View: MS_RAW.' || TABLE_SCHEMA || '.STG_' || NEW_TABLE_NAME || '\n' ||
+    '-- Source: MS_RAW.' || TABLE_SCHEMA || '.' || TABLE_NAME || '\n' ||
     '-- Generated: ' || CURRENT_TIMESTAMP()::VARCHAR || '\n' ||
     '-- ================================================================\n\n' ||
-    'CREATE OR REPLACE VIEW MS_RAW.' || SF_TABLE_SCHEMA || '.STG_' || NEW_TABLE_NAME || ' AS\n' ||
+    'CREATE OR REPLACE VIEW MS_RAW.' || TABLE_SCHEMA || '.STG_' || NEW_TABLE_NAME || ' AS\n' ||
     'SELECT\n' ||
     COLUMN_LIST || '\n' ||
-    'FROM ROL_RAW.' || SF_TABLE_SCHEMA || '.' || SF_TABLE_NAME || '\n' ||
+    'FROM ROL_RAW.' || TABLE_SCHEMA || '.' || TABLE_NAME || '\n' ||
     ';\n'
 --    '-- Grant permissions\n' ||
---    'GRANT SELECT ON VIEW MS_RAW.' || SF_TABLE_SCHEMA || '.STG_' || NEW_TABLE_NAME || ' TO ROLE ACCOUNTADMIN;\n'
+--    'GRANT SELECT ON VIEW MS_RAW.' || TABLE_SCHEMA || '.STG_' || NEW_TABLE_NAME || ' TO ROLE ACCOUNTADMIN;\n'
      AS DDL_SCRIPT
 FROM column_lists
-ORDER BY SF_TABLE_SCHEMA, NEW_TABLE_NAME;
+ORDER BY TABLE_SCHEMA, NEW_TABLE_NAME;
 
 -- ================================================================
 -- STEP 3: Query to review generated scripts
 -- ================================================================
 SELECT
-    SF_TABLE_SCHEMA,
+    TABLE_SCHEMA,
     NEW_TABLE_NAME,
     FILE_PATH,
     LENGTH(DDL_SCRIPT) AS SCRIPT_LENGTH
 FROM MS_RAW.STG_META.V_GENERATED_VIEW_SCRIPTS
-ORDER BY SF_TABLE_SCHEMA, NEW_TABLE_NAME;
+ORDER BY TABLE_SCHEMA, NEW_TABLE_NAME;
 
 -- ================================================================
 -- STEP 4: Sample output - view a specific script
@@ -220,7 +219,7 @@ SELECT
 -- DDL_SCRIPT
     LISTAGG(DDL_SCRIPT, '\n') WITHIN GROUP (ORDER BY NEW_TABLE_NAME) AS "--DDL_SCRIPT"
 FROM MS_RAW.STG_META.V_GENERATED_VIEW_SCRIPTS
-WHERE SF_TABLE_SCHEMA = 'REEDONLINE_DBO'
+WHERE TABLE_SCHEMA = 'REEDONLINE_DBO'
 -- ORDER BY NEW_TABLE_NAME
 ;
 
@@ -228,13 +227,13 @@ WHERE SF_TABLE_SCHEMA = 'REEDONLINE_DBO'
 -- STEP 6: Statistics by schema
 -- ================================================================
 SELECT
-    SF_TABLE_SCHEMA,
+    TABLE_SCHEMA,
     COUNT(*) AS TABLE_COUNT,
     COUNT(DISTINCT NEW_TABLE_NAME) AS UNIQUE_TABLE_COUNT,
     AVG(LENGTH(DDL_SCRIPT)) AS AVG_SCRIPT_LENGTH
 FROM MS_RAW.STG_META.V_GENERATED_VIEW_SCRIPTS
-GROUP BY SF_TABLE_SCHEMA
-ORDER BY SF_TABLE_SCHEMA;
+GROUP BY TABLE_SCHEMA
+ORDER BY TABLE_SCHEMA;
 
 -- ================================================================
 -- STEP 7: Column category breakdown
